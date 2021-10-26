@@ -1,11 +1,21 @@
 import discord
 from discord.ext import commands
 import youtube_dl
+from PlaybackState import PlaybackState
 
-class music(commands.Cog):
+class Music(commands.Cog):
   def __init__(self, client):
       self.client = client
+      self.playbackStates = {}
   
+  def getPlaybackState(self, ctx: commands.Context):
+    state = self.playbackStates.get(ctx.guild.id)
+    if not state:
+        state = PlaybackState(self.client, ctx)
+        self.playbackStates[ctx.guild.id] = state
+
+    return state
+
   @commands.command()
   async def join(self, ctx):
     if ctx.author.voice is None:
@@ -43,7 +53,24 @@ class music(commands.Cog):
   async def resume(self, ctx):
     await ctx.voice_client.resume()
     await ctx.send("Resumed ⏯")
+  
+  def cog_unload(self):
+    for state in self.playbackStates.values():
+        self.client.loop.create_task(state.stop())
+
+  async def cog_before_invoke(self, ctx: commands.Context):
+    ctx.voice_state = self.getPlaybackState(ctx)
+
+  @join.before_invoke
+  @play.before_invoke
+  async def ensurePlaybackState(self, ctx: commands.Context):
+      if not ctx.author.voice or not ctx.author.voice.channel:
+          raise commands.CommandError('You are not connected to any voice channel.')
+
+      if ctx.voice_client:
+          if ctx.voice_client.channel != ctx.author.voice.channel:
+              raise commands.CommandError('Bot is already in a voice channel.')
 
 
 def setup(client):
-  client.add_cog(music(client))
+  client.add_cog(Music(client))
